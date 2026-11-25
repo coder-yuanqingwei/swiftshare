@@ -10,13 +10,21 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ubjs/core": "^0.31.0"
+    "@ubjs/core": "0.31.0-8"
   },
   "devDependencies": {
-    "uniffi-bindgen-react-native": "^0.31.0"
+    "uniffi-bindgen-react-native": "0.31.0-8"
   },
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
+  },
+  "codegenConfig": {
+    "name": "SwiftShareCoreSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/generated",
+    "android": {
+      "javaPackageName": "com.swiftshare.core"
+    }
   }
 }

@@ -97,11 +97,17 @@ npm run android   # 或 npm run ios
 - [x] TypeScript 应用层：UI、BLE 服务、权限、传输门面（11 文件语法检查 0 错误）
 - [x] **BLE Peripheral GATT server 真实落地**（按 peripheral-manager@0.3.0 实际 API 实现读请求动态应答、写请求监听）
 - [x] **Android/iOS 原生配置模板**（含 ⚠️ HTTP 明文传输的 ATS / cleartext 关键配置）
-- [ ] 原生工程搭建（`react-native init` 后套用 `app/native-templates/`，需 Android Studio / Xcode）
-- [ ] 生成 UniFFI 原生绑定（`ubrn build --and-generate`，需 SDK）
+- [x] **Android 原生工程已生成**（RN 0.76 官方模板，含 gradlew、权限、明文网络配置）
+- [x] **GitHub Actions 云端打包 APK**（`.github/workflows/build-android.yml`，push 即自动构建）
+- [ ] 生成 iOS 原生工程（需 macOS + Xcode）
 - [ ] 两台真机端到端联调
 
-> 无需真机即可验证核心：上面第 1、1b 步。剩下需在真机完成的步骤都写在 `docs/NATIVE_SETUP.md`。
+> 无需真机即可验证核心：上面第 1、1b 步。真机配置见 `docs/NATIVE_SETUP.md`，云端打包 APK 见 `docs/CI_BUILD.md`。
+
+## 云端编译打包 APK
+
+仓库已配置 GitHub Actions，push 后自动在云端完成 Rust 交叉编译 + UniFFI 绑定生成 + APK 打包并上传。
+操作方法与前提（含 GitHub 授权步骤）见 **`docs/CI_BUILD.md`**。
 
 ## 本轮修复的真实问题
 

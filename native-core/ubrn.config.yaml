@@ -4,14 +4,21 @@ rust:
   directory: ../rust-core
   manifestPath: Cargo.toml
 
-# Where generated bindings land.
+# Generated bindings destinations (relative to native-core/).
 bindings:
   cpp: cpp/generated
   ts: src/generated
 
+# Android: build both 64-bit and 32-bit ARM so the APK runs on most devices.
+# The .so files are copied into android/src/main/jniLibs/<abi>/ and packaged
+# by Gradle when the app assembles.
+android:
+  targets:
+    - arm64-v8a
+    - armeabi-v7a
+
 # Files the generator must not clobber on regeneration.
+# Keep only hand-maintained files here; let ubrn generate android build files.
 noOverwrite:
   - "*.podspec"
   - package.json
-  - android/build.gradle
-  - android/src/main/AndroidManifest.xml

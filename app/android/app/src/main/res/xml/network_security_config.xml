@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  复制到: app/android/app/src/main/res/xml/network_security_config.xml
+  ⚠️ 关键：允许访问局域网内接收方的明文 HTTP 服务（Rust axum 监听 8787 端口）。
+  Android 9 (API 28)+ 默认 block HTTP 明文，不配这个文件传输会直接失败。
+-->
+<network-security-config>
+    <!-- 允许所有明文流量：局域网互传场景，数据不出本地网络 -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

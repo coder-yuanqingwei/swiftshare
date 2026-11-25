@@ -33,7 +33,7 @@
     "@typescript-eslint/parser": "^8.15.0",
     "babel-plugin-module-resolver": "^5.0.0",
     "typescript": "^5.7.2",
-    "uniffi-bindgen-react-native": "^0.31.0",
-    "@ubjs/core": "^0.31.0"
+    "uniffi-bindgen-react-native": "0.31.0-8",
+    "@ubjs/core": "0.31.0-8"
   }
 }
