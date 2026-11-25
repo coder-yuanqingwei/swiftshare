@@ -1,63 +1,91 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator,
 } from 'react-native';
-import DocumentPicker from 'react-native-document-picker';
-import type { PeerInfo } from '../types';
 
 interface Props {
-  peers: PeerInfo[];
-  scanning: boolean;
   connectedName?: string | null;
-  onPickPeer: (peer: PeerInfo) => void;
+  codeError?: string | null;
+  onConnectCode: (code: string) => void;
+  onPaste: () => Promise<string | null>;
   onSendFiles: () => void;
   onReset: () => void;
 }
 
-export default function SenderScreen({ peers, scanning, connectedName, onPickPeer, onSendFiles, onReset }: Props) {
-  const [selected, setSelected] = useState<PeerInfo | null>(null);
+export default function SenderScreen({
+  connectedName, codeError, onConnectCode, onPaste, onSendFiles, onReset,
+}: Props) {
+  const [code, setCode] = useState('');
+  const [connecting, setConnecting] = useState(false);
+
+  const connect = (value: string) => {
+    if (!value.trim()) return;
+    setConnecting(true);
+    try {
+      onConnectCode(value.trim());
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const paste = async () => {
+    const text = await onPaste();
+    if (text) setCode(text.trim());
+  };
+
+  const connected = Boolean(connectedName);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.badge}><Text style={[styles.badgeText, styles.sendBadgeText]}>发送模式</Text></View>
-      <Text style={styles.title}>选择接收设备</Text>
+      <Text style={styles.title}>连接接收方</Text>
 
-      {scanning && !selected && (
-        <View style={styles.scanningRow}>
-          <ActivityIndicator color="#2f6fed" size="small" />
-          <Text style={styles.scanningText}>正在通过蓝牙搜索附近的接收方…</Text>
-        </View>
-      )}
+      <View style={styles.netCard}>
+        <Text style={styles.netIcon}>🔥</Text>
+        <Text style={styles.netDesc}>
+          先加入接收方的个人热点（或连同一 WiFi），再粘贴对方发来的连接码。
+        </Text>
+      </View>
 
-      {!selected && peers.length > 0 && (
-        <View style={styles.list}>
-          {peers.map((p) => (
-            <TouchableOpacity key={p.device_id} style={styles.peerCard} onPress={() => {
-              setSelected(p);
-              onPickPeer(p);
-            }}>
-              <Text style={styles.peerIcon}>📱</Text>
-              <View>
-                <Text style={styles.peerName}>{p.name || '未命名设备'}</Text>
-                <Text style={styles.peerId}>{p.device_id}</Text>
-              </View>
+      {!connected ? (
+        <View style={styles.connectCard}>
+          <Text style={styles.fieldLabel}>连接码</Text>
+          <TextInput
+            style={styles.input}
+            value={code}
+            onChangeText={setCode}
+            placeholder="粘贴 SwiftShare1: 开头的连接码"
+            placeholderTextColor="#aaa"
+            multiline
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {codeError ? <Text style={styles.errorText}>{codeError}</Text> : null}
+          <View style={styles.btnRow}>
+            <TouchableOpacity style={styles.pasteBtn} onPress={paste}>
+              <Text style={styles.pasteBtnText}>粘贴</Text>
             </TouchableOpacity>
-          ))}
+            <TouchableOpacity
+              style={[styles.connectBtn, !code.trim() && styles.btnDisabled]}
+              onPress={() => connect(code)}
+              disabled={!code.trim() || connecting}
+            >
+              {connecting ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.connectBtnText}>连接</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      )}
-
-      {!selected && !scanning && peers.length === 0 && (
-        <Text style={styles.empty}>没有发现设备。请确保接收方处于接收模式且蓝牙已开启。</Text>
-      )}
-
-      {(selected || connectedName) && (
+      ) : (
         <View style={styles.selectedCard}>
-          <Text style={styles.selectedTitle}>已连接：{connectedName || selected?.name}</Text>
+          <Text style={styles.selectedTitle}>✓ 已连接：{connectedName}</Text>
           <Text style={styles.selectedHint}>点击下方按钮选择要发送的图片或文件</Text>
         </View>
       )}
 
-      {(selected || connectedName) && (
+      {connected && (
         <TouchableOpacity style={styles.sendBtn} onPress={onSendFiles}>
           <Text style={styles.sendBtnText}>选择图片并发送</Text>
         </TouchableOpacity>
@@ -77,14 +105,19 @@ const styles = StyleSheet.create({
   badgeText: { color: '#2f6fed', fontWeight: '700', fontSize: 13 },
   sendBadgeText: { color: '#0e8a6f' },
   title: { fontSize: 22, fontWeight: '800', color: '#1a1a1a', marginBottom: 18 },
-  scanningRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  scanningText: { marginLeft: 10, color: '#666', fontSize: 14 },
-  list: { gap: 10 },
-  peerCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 12, gap: 14, elevation: 2, marginBottom: 10 },
-  peerIcon: { fontSize: 28 },
-  peerName: { fontSize: 16, fontWeight: '700', color: '#222' },
-  peerId: { fontSize: 11, color: '#999', marginTop: 3 },
-  empty: { color: '#888', fontSize: 14, lineHeight: 20, paddingVertical: 24, textAlign: 'center' },
+  netCard: { flexDirection: 'row', backgroundColor: '#fff8e6', borderRadius: 12, padding: 14, marginBottom: 18, alignItems: 'center' },
+  netIcon: { fontSize: 24, marginRight: 12 },
+  netDesc: { flex: 1, fontSize: 13, color: '#a8863b', lineHeight: 19 },
+  connectCard: { backgroundColor: '#fff', borderRadius: 14, padding: 18, elevation: 2 },
+  fieldLabel: { fontSize: 13, fontWeight: '700', color: '#555', marginBottom: 8 },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 13, color: '#222', minHeight: 80, textAlignVertical: 'top', marginBottom: 6 },
+  errorText: { color: '#d32f2f', fontSize: 12, marginBottom: 8 },
+  btnRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  pasteBtn: { flex: 1, backgroundColor: '#eef3ff', paddingVertical: 13, borderRadius: 10, alignItems: 'center' },
+  pasteBtnText: { color: '#2f6fed', fontWeight: '700', fontSize: 15 },
+  connectBtn: { flex: 1, backgroundColor: '#2f6fed', paddingVertical: 13, borderRadius: 10, alignItems: 'center' },
+  connectBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  btnDisabled: { backgroundColor: '#a9c2f0' },
   selectedCard: { backgroundColor: '#e0f7f1', borderRadius: 12, padding: 18, marginTop: 8 },
   selectedTitle: { fontSize: 17, fontWeight: '700', color: '#0e8a6f' },
   selectedHint: { fontSize: 13, color: '#0e8a6f', marginTop: 6 },

@@ -1,16 +1,20 @@
 # SwiftShare
 
-安卓 ↔ iPhone 图片/文件互传 App。**蓝牙发现握手 + WiFi 高速传输**，一套 TypeScript + React Native + Rust 代码覆盖两端。
+安卓 ↔ iPhone 图片/文件互传 App。**热点组网 + 连接码握手 + WiFi 高速传输**，一套 TypeScript + React Native + Rust 代码覆盖两端。
+
+> v0.2 起已移除蓝牙：BLE 吞吐仅约 20–100 KB/s、iOS 经典蓝牙需 MFi，不适合本产品主场景。握手改为「连接码复制/粘贴」，传输走局域网 HTTP，速度比蓝牙快几个数量级。
 
 ## 为什么这样设计
 
-AirDrop / Quick Share 不能跨端，跨端互传必须自己实现。iOS 对蓝牙传大文件限制极严（经典蓝牙需 MFi，BLE 实际吞吐约 100 KB/s），所以本项目采用 AirDrop 同款思路：
+AirDrop / Quick Share 不能跨端，跨端互传必须自己实现。本项目采用与"快牙/互传"同款的思路：
 
 ```
-① BLE 广播/扫描 —— 发现附近设备（不传文件）
-② BLE 握手 —— 仅传一个几十字节的 Handshake（IP + 端口 + token）
+① 一台设备开个人热点 —— 两台手机形成局域网（无需路由器/流量）
+② 接收方生成「连接码」—— 含 IP + 端口 + token，用户发给对方复制/粘贴
 ③ WiFi HTTP —— 图片/文件走高速通道（Rust axum 服务端 + reqwest 客户端）
 ```
+
+详细说明见 [docs/OFFLINE_FALLBACK.md](docs/OFFLINE_FALLBACK.md)。
 
 Rust 承担"硬核"部分（HTTP 服务、流式上传、进度记帐、token 校验、**SHA256 完整性校验**），React Native 只做 UI 和编排，二者通过 UniFFI 生成的 TurboModule 通信（**无 JSON 桥接开销**）。
 
@@ -23,7 +27,7 @@ Rust 承担"硬核"部分（HTTP 服务、流式上传、进度记帐、token �
 | UI | TypeScript + React Native 0.76 |
 | 跨语言桥 | uniffi-bindgen-react-native（UniFFI → TurboModule/JSI） |
 | 核心逻辑 | Rust 2021（axum + reqwest + tokio） |
-| BLE | react-native-ble-plx（扫描）+ react-native-ble-peripheral-manager（广播） |
+| 握手 | 可复制连接码（RN 核心 Clipboard）+ 二维码（react-native-qrcode-svg） |
 | 文件/权限 | document-picker、fs、permissions、netinfo |
 
 ## 目录结构
@@ -45,16 +49,16 @@ swiftshare/
 │   └── src/
 │       ├── types.ts
 │       ├── services/
-│       │   ├── ble.ts          # BLE Central/Peripheral 封装
+│       │   ├── connection.ts   # 连接码编解码 + 剪贴板复制/粘贴
 │       │   ├── transfer.ts     # 调用 Rust engine 的门面
-│       │   ├── permissions.ts  # 双端权限申请
-│       │   └── network.ts      # 本机 LAN IP / 保存目录获取
+│       │   ├── permissions.ts  # 双端权限申请（无蓝牙）
+│       │   └── network.ts      # 局域网检测 / LAN IP / 保存目录获取
 │       └── screens/            # 首页 / 接收 / 发送 / 结果
 ├── app/native-templates/       # 可直接复制的原生配置模板
 │   ├── android/                # AndroidManifest.xml + network_security_config.xml
 │   └── ios/Info.plist
 └── docs/
-    └── NATIVE_SETUP.md         # 原生工程配置（权限、BLE、ubrn 生成步骤）
+    └── NATIVE_SETUP.md         # 原生工程配置（权限、ubrn 生成步骤）
 ```
 
 ## 快速开始
@@ -76,7 +80,7 @@ cd ../native-core
 npx ubrn build android --and-generate   # Android
 npx ubrn build ios --and-generate       # iOS（仅 macOS）
 
-# 4. 配置原生权限与 BLE Peripheral（见 docs/NATIVE_SETUP.md）
+# 4. 配置原生权限（见 docs/NATIVE_SETUP.md）
 
 # 5. 两台真机运行
 cd ../app
@@ -85,8 +89,8 @@ npm run android   # 或 npm run ios
 
 ## 使用流程
 
-1. 接收方：选「接收文件」→ 授权 → 展示二维码并广播蓝牙。
-2. 发送方：选「发送文件」→ 授权 → 在附近设备列表选本机（或扫二维码）。
+1. 接收方：选「接收文件」→ 授权 → 本机开热点（或连同一 WiFi）→ App 生成连接码并展示二维码。
+2. 发送方：加入接收方热点 → 选「发送文件」→ 粘贴对方发来的连接码（或扫二维码）→ 连接成功。
 3. 发送方：点「选择图片并发送」→ 选图 → WiFi 高速传输，双方显示进度。
 
 ## 状态
@@ -94,8 +98,8 @@ npm run android   # 或 npm run ios
 - [x] Rust 核心：HTTP 收/发、握手、token 校验、**SHA256 完整性校验**、动态端口、进度回调、QR 序列化
 - [x] 端到端验证：`cargo test` **4/4 通过**（含真实 HTTP 传输 + 错误拒绝），`cargo run --bin swiftshare-demo` 实跑成功
 - [x] UniFFI 导出接口与本地 ubrn 配置
-- [x] TypeScript 应用层：UI、BLE 服务、权限、传输门面（11 文件语法检查 0 错误）
-- [x] **BLE Peripheral GATT server 真实落地**（按 peripheral-manager@0.3.0 实际 API 实现读请求动态应答、写请求监听）
+- [x] TypeScript 应用层：UI、连接码握手、权限、传输门面（语法检查 0 错误）
+- [x] **v0.2 移除蓝牙**：握手改为热点 + 连接码复制/粘贴，删去 BLE 依赖与权限
 - [x] **Android/iOS 原生配置模板**（含 ⚠️ HTTP 明文传输的 ATS / cleartext 关键配置）
 - [x] **Android 原生工程已生成**（RN 0.76 官方模板，含 gradlew、权限、明文网络配置）
 - [x] **GitHub Actions 云端打包 APK**（`.github/workflows/build-android.yml`，push 即自动构建）
@@ -111,7 +115,7 @@ npm run android   # 或 npm run ios
 
 ## 本轮修复的真实问题
 
-- **BLE Peripheral 从空壳变真实实现**：核对了 npm 包内 TypeScript 类型，按真实 API 用位掩码配置 GATT 特征、动态应答读请求。
+- **v0.2 去掉蓝牙**：移除 ble-plx / peripheral-manager 依赖、蓝牙运行时权限、Manifest 蓝牙声明；改用热点 + 连接码握手（详见 OFFLINE_FALLBACK.md）。
 - **iOS 保存路径**：原来传空串会写到根目录 `/SwiftShare`（无权限），改为 App Documents 目录。
 - **HTTP 明文被系统拦截**：Android 9+/iOS ATS 默认禁止明文，补了 `network_security_config.xml` 与 `NSAllowsLocalNetworking`，否则传输必失败。
 - **Rust 编译错误**：修复了 `resp.text()` 消费 response 后又读 status 的 move 错误。

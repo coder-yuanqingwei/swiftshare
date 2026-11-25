@@ -4,22 +4,14 @@
   复制到: app/ios/SwiftShare/Info.plist
   仅列出需新增的 key，把它合并进现有 Info.plist 的 <dict> 内。
   完整接入步骤见 docs/NATIVE_SETUP.md
+
+  v0.2 热点方案：已移除蓝牙相关 key，握手改用连接码复制/粘贴。
 -->
 <plist version="1.0">
 <dict>
-    <!-- ===== 蓝牙（Central 扫描 + Peripheral 广播双角色） ===== -->
-    <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>用于发现附近设备并完成传输握手（仅交换几十字节信息，不通过蓝牙传文件）</string>
-    <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>用于让附近设备发现本机并建立传输握手</string>
-
-    <!-- ===== iOS 14+ 本地网络权限（⚠️ 缺失会导致发现静默失败） ===== -->
+    <!-- ===== iOS 14+ 本地网络权限（个人热点 / 局域网传输必需） ===== -->
     <key>NSLocalNetworkUsageDescription</key>
     <string>用于在局域网内高速传输图片文件</string>
-    <key>NSBonjourServices</key>
-    <array>
-        <string>_swiftshare._tcp</string>
-    </array>
 
     <!-- ===== 选图 / 相册 ===== -->
     <key>NSPhotoLibraryUsageDescription</key>
@@ -37,12 +29,5 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
-
-    <!-- 后台蓝牙（ble-plx / peripheral-manager state restoration） -->
-    <key>UIBackgroundModes</key>
-    <array>
-        <string>bluetooth-central</string>
-        <string>bluetooth-peripheral</string>
-    </array>
 </dict>
 </plist>

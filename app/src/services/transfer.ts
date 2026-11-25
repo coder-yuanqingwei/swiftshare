@@ -15,8 +15,7 @@ import {
   TransferProgress as RustProgress,
 } from 'react-native-swiftshare-core';
 
-import { ble } from './ble';
-import type { Handshake as UiHandshake, PeerInfo, TransferProgress } from '../types';
+import type { Handshake as UiHandshake, TransferProgress } from '../types';
 
 /** TS implementation of the Rust `BleAdapter` callback interface. */
 class TsBleAdapter implements BleAdapter {
@@ -68,13 +67,9 @@ class TransferController {
       },
       (m) => this.hooks.onLog(m),
     );
+    // v0.2 热点方案：引擎仅负责 HTTP/校验/状态机。适配器只承载日志回调，
+    // 不再驱动任何 BLE 硬件（构造函数签名由 UniFFI 固定，故仍传一个实例）。
     this.engine = new TransferEngine(adapter);
-
-    ble.setCallbacks({
-      onPeerFound: (id, name) => this.hooks.onPeerFound(id, name),
-      onLog: (m) => this.hooks.onLog(m),
-      onHandshakeReceived: () => {},
-    });
   }
 
   private require(): TransferEngine {
@@ -124,13 +119,13 @@ class TransferController {
     return Number(total);
   }
 
+  // v0.2 热点方案：设备发现改为手动输入连接码，以下方法保留为空以兼容调用点。
   startDiscovery(): void {
-    this.require().start_ble_discovery();
-    ble.startScanning();
+    /* no-op: 握手已改为连接码 */
   }
 
   stopDiscovery(): void {
-    ble.stopScanning();
+    /* no-op */
   }
 }
 

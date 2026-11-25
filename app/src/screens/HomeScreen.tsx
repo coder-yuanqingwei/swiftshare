@@ -14,7 +14,7 @@ export default function HomeScreen({ onChoose }: Props) {
         <Text style={styles.title}>SwiftShare</Text>
         <Text style={styles.subtitle}>安卓 · iPhone 图片文件互传</Text>
         <Text style={styles.desc}>
-          蓝牙发现 · 握手，WiFi 高速传输{'\n'}无需流量，无需数据线
+          热点组网 · 连接码握手，WiFi 高速传输{'\n'}无需流量，无需数据线
         </Text>
       </View>
 
@@ -23,7 +23,7 @@ export default function HomeScreen({ onChoose }: Props) {
           <Text style={styles.cardIcon}>⬇</Text>
           <Text style={styles.cardTitle}>接收文件</Text>
           <Text style={styles.cardDesc}>
-            本机广播并生成二维码，等待对方连接后接收图片
+            本机开热点（或连同一 WiFi），生成连接码给对方，等待接收图片
           </Text>
         </TouchableOpacity>
 
@@ -31,13 +31,14 @@ export default function HomeScreen({ onChoose }: Props) {
           <Text style={styles.cardIcon}>⬆</Text>
           <Text style={styles.cardTitle}>发送文件</Text>
           <Text style={styles.cardDesc}>
-            扫描附近设备，选择图片后高速发送到对方手机
+            加入对方热点，粘贴对方发来的连接码，选图后高速发送
           </Text>
         </TouchableOpacity>
       </View>
 
       <Text style={styles.foot}>
-        提示：两台设备需连接同一 WiFi，或一台开热点另一台加入
+        提示：一方开启个人热点，另一方加入；或两台设备连接同一 WiFi。
+        {'\n'}握手通过复制连接码完成，不使用蓝牙。
       </Text>
     </View>
   );

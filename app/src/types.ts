@@ -28,8 +28,10 @@ export type Role = 'sender' | 'receiver';
 export type AppPhase =
   | 'idle'
   | 'requesting-permissions'
-  | 'discovering'
-  | 'advertising'
+  | 'checking-network'
+  | 'setup-hotspot'
+  | 'discovering'      // 发送方：等待粘贴连接码
+  | 'advertising'      // 接收方：HTTP 就绪，展示连接码
   | 'connected'
   | 'transferring'
   | 'done'

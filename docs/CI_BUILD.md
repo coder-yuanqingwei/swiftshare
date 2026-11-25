@@ -99,3 +99,16 @@
 
 修复提交：`d8da029`，已推送 master 并打 tag `v0.1.1` 触发 Release 重新打包。
 验证：`tsc --noEmit` 退出码 0、Metro bundle 成功、Rust 测试全过。
+
+---
+
+## 八、v0.2：移除蓝牙，改热点 + 连接码握手
+
+按用户决定彻底去掉蓝牙（BLE 吞吐仅 20–100 KB/s、iOS 经典蓝牙需 MFi），改用热点组网：
+- 接收方开热点/连同一 WiFi → 启动 HTTP 服务 → 生成「连接码」（含 IP/端口/token，RN 核心 Clipboard 一键复制）；
+- 发送方加入热点 → 粘贴连接码 → 解析握手 → HTTP 高速传文件；
+- 删除 `ble.ts`，移除 `react-native-ble-plx` / `react-native-ble-peripheral-manager` 依赖，
+  Manifest 去掉蓝牙权限与 `bluetooth_le` feature，permissions 去掉蓝牙权限申请；
+- Rust 引擎无需改动（`TransferEngine::new` 的 adapter 仅承载日志回调）。
+
+设计分析见 `docs/OFFLINE_FALLBACK.md`。本地验证：`tsc --noEmit` 0 错误、Metro bundle 成功、Rust 测试 4/4 过。
