@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    # Required so `softprops/action-gh-release` can create the Release + upload assets on tags.
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
