@@ -82,3 +82,20 @@
 5. Release 步骤默认 `GITHUB_TOKEN` 无写权限（403）→ job 加 `permissions: contents: write`。
 
 > 复现构建：push 到 master 会触发；打 `v*` tag 会额外发布 Release 并附上 APK。
+
+---
+
+## 七、bug 修复与 v0.1.1（2026-11-25）
+
+一轮本地主动排查（Rust 测试 4/4、`tsc --noEmit`、Metro bundle）发现 3 个 TS 类型错误，
+其中一个是**真实运行时 bug**：
+
+1. **`app/src/services/ble.ts`**：`react-native-ble-plx@3.5.1` 的 `Device` 没有 `disconnect()` 方法
+   （正确 API 是 `manager.cancelDeviceConnection(deviceId)`）。`readHandshake()` 里这行位于 `return json`
+   之前，运行时必抛 `TypeError` 被 catch，导致握手信息永远读不到 → **BLE 握手流程实际失效**。
+   `sendControl()` 同样受影响。已两处改为 `this.manager.cancelDeviceConnection(deviceId)`。
+2. **`app/src/services/permissions.ts`**：iOS 权限常量写成了不存在的 `PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL`，
+   正确为 `PERMISSIONS.IOS.BLUETOOTH`（iOS 蓝牙权限靠 Info.plist 声明，无需运行时请求）。
+
+修复提交：`d8da029`，已推送 master 并打 tag `v0.1.1` 触发 Release 重新打包。
+验证：`tsc --noEmit` 退出码 0、Metro bundle 成功、Rust 测试全过。
