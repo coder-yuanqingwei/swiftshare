@@ -2,6 +2,11 @@
   "name": "react-native-swiftshare-core",
   "version": "0.1.0",
   "description": "Rust-backed transfer core for SwiftShare (UniFFI TurboModule)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coder-yuanqingwei/swiftshare.git",
+    "directory": "native-core"
+  },
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
