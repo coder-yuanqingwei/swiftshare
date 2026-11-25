@@ -21,52 +21,58 @@ if (global.ErrorUtils) {
   });
 }
 
-function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, rej) =>
-      setTimeout(() => rej(new Error(label + ' 超过 ' + (ms / 1000) + ' 秒未返回（疑似挂起）')), ms)
-    ),
-  ]);
-}
-
 /**
- * 诊断壳：第一时间注册渲染（先于一切原生初始化），任何阶段出错或挂起
- * 都会在屏幕上显示出来。修复点：v0.2.0 把 AppRegistry.registerComponent
- * 放在 uniffiInitAsync 之后，若初始化挂起/抛错则永远白屏。
+ * 诊断壳：第一时间注册渲染（先于一切原生初始化）。
+ *
+ * 关键事实（v0.2.3 修复）：
+ * ubrn 生成的 react-native-swiftshare-core 是 "sync flavor" turbo module——
+ * 包在 require() 时已同步执行 default.initialize() 完成初始化。
+ * 它并没有导出名为 uniffiInitAsync 的函数（生成的包里根本没有这个符号），
+ * 旧代码调用 core.uniffiInitAsync() 会抛 "undefined is not a function"，
+ * 这就是自 v0.2 起打开白屏/闪退的真正根因。
+ *
+ * 因此这里只 require 一次触发原生初始化，不再调用不存在的函数。
  */
 function CrashGate() {
-  const [stage, setStage] = useState('启动中…');
-  const [content, setContent] = useState(null); // 错误/崩溃详情
+  const [booting, setBooting] = useState(true);
+  const [content, setContent] = useState(null);
   const [App, setApp] = useState(null);
 
   useEffect(() => {
     (async () => {
+      // 1) 若有上次错误记录，展示出来（诊断用）
       try {
-        setStage('读取崩溃记录…');
         const ok = await RNFS.exists(CRASH_FILE);
         if (ok) {
           const c = await RNFS.readFile(CRASH_FILE, 'utf8');
           if (c && c.trim()) {
             setContent(c);
+            setBooting(false);
             return;
           }
         }
+      } catch (_e) {}
 
-        setStage('初始化 Rust 引擎（uniffiInitAsync）…');
-        const core = require('react-native-swiftshare-core');
-        await withTimeout(
-          Promise.resolve(core.uniffiInitAsync()),
-          10000,
-          'uniffiInitAsync'
-        );
+      // 2) 触发 Rust 原生模块初始化（require 即初始化，无需调用额外函数）
+      try {
+        require('react-native-swiftshare-core');
+      } catch (e) {
+        const msg = 'NATIVE INIT ERROR\n\n' + fmtErr(e);
+        try { await RNFS.writeFile(CRASH_FILE, msg, 'utf8'); } catch (_e2) {}
+        setContent(msg);
+        setBooting(false);
+        return;
+      }
 
-        setStage('加载主界面…');
+      // 3) 加载主界面
+      try {
         setApp(() => require('./src/App').default);
       } catch (e) {
-        const msg = 'STARTUP ERROR\n阶段: ' + stage + '\n\n' + fmtErr(e);
-        try { await RNFS.writeFile(CRASH_FILE, msg, 'utf8'); } catch (_e) {}
+        const msg = 'APP LOAD ERROR\n\n' + fmtErr(e);
+        try { await RNFS.writeFile(CRASH_FILE, msg, 'utf8'); } catch (_e2) {}
         setContent(msg);
+      } finally {
+        setBooting(false);
       }
     })();
   }, []);
@@ -84,6 +90,7 @@ function CrashGate() {
           onPress={() => {
             RNFS.writeFile(CRASH_FILE, '', 'utf8').catch(() => {});
             setContent(null);
+            setBooting(true);
           }}>
           <Text style={s.btnText}>清除记录，继续打开 App</Text>
         </TouchableOpacity>
@@ -96,7 +103,7 @@ function CrashGate() {
   return (
     <View style={s.center}>
       <ActivityIndicator size="large" />
-      <Text style={s.stage}>{stage}</Text>
+      <Text style={s.stage}>{booting ? '启动中…' : '加载主界面…'}</Text>
       <Text style={s.hint}>如果长时间停在这一行，说明卡在这一步</Text>
     </View>
   );
@@ -114,5 +121,5 @@ const s = StyleSheet.create({
   hint: { marginTop: 8, fontSize: 11, color: '#999' },
 });
 
-// 关键修复：无条件、第一时间注册组件，不再等待任何原生初始化。
+// 关键：无条件、第一时间注册组件，不再等待任何原生初始化。
 AppRegistry.registerComponent(appName, () => CrashGate);
