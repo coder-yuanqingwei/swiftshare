@@ -17,15 +17,25 @@ import {
 
 import type { Handshake as UiHandshake, TransferProgress } from '../types';
 
+/** Map the UI handshake (snake_case) to the generated Rust record (camelCase). */
+function toRustHandshake(hs: UiHandshake): Handshake {
+  return {
+    ip: hs.ip,
+    port: hs.port,
+    token: hs.token,
+    deviceName: hs.device_name,
+  };
+}
+
 /** TS implementation of the Rust `BleAdapter` callback interface. */
 class TsBleAdapter implements BleAdapter {
   constructor(private onPeer: (id: string, name: string) => void, private onMsg: (m: string) => void) {}
 
-  on_peer_found(device_id: string, name: string): void {
-    this.onPeer(device_id, name);
+  onPeerFound(deviceId: string, name: string): void {
+    this.onPeer(deviceId, name);
   }
 
-  on_log(message: string): void {
+  onLog(message: string): void {
     this.onMsg(message);
   }
 }
@@ -34,12 +44,12 @@ class TsBleAdapter implements BleAdapter {
 class TsProgress implements ProgressCallback {
   constructor(private cb: (p: TransferProgress) => void) {}
 
-  on_progress(progress: RustProgress): void {
+  onProgress(progress: RustProgress): void {
     this.cb({
       current: Number(progress.current),
       total: Number(progress.total),
-      file_index: progress.file_index,
-      file_count: progress.file_count,
+      file_index: progress.fileIndex,
+      file_count: progress.fileCount,
     });
   }
 }
@@ -79,43 +89,43 @@ class TransferController {
 
   /** Receiver: start HTTP server, return the handshake to advertise/encode. */
   async startReceiver(localIp: string, saveDir: string, port = 8787): Promise<UiHandshake> {
-    const rustHs: Handshake = await this.require().start_receiver(localIp, saveDir, port);
+    const rustHs: Handshake = await this.require().startReceiver(localIp, saveDir, port);
     return {
       ip: rustHs.ip,
       port: rustHs.port,
       token: rustHs.token,
-      device_name: rustHs.device_name,
+      device_name: rustHs.deviceName,
     };
   }
 
   stopReceiver(): void {
-    this.require().stop_receiver();
+    this.require().stopReceiver();
   }
 
   /** Receiver: files accepted so far, for post-transfer confirmation. */
   getReceivedFiles(): Array<{ name: string; size: number; sha256: string }> {
-    return this.require().received_files().map((f) => ({
+    return this.require().receivedFiles().map((f) => ({
       name: f.name,
       size: Number(f.size),
       sha256: f.sha256,
     }));
   }
 
-  /** Receiver: serialize handshake for the QR code / BLE characteristic. */
+  /** Receiver: serialize handshake for the QR code / connection code. */
   toQrPayload(hs: UiHandshake): string {
-    return this.require().make_qr_payload({ ...hs } as Handshake);
+    return this.require().makeQrPayload(toRustHandshake(hs));
   }
 
-  /** Sender: parse a scanned QR/BLE handshake payload. */
+  /** Sender: parse a connection-code / QR handshake payload. */
   fromQrPayload(json: string): UiHandshake {
-    const hs = this.require().parse_qr_payload(json);
-    return { ip: hs.ip, port: hs.port, token: hs.token, device_name: hs.device_name };
+    const hs = this.require().parseQrPayload(json);
+    return { ip: hs.ip, port: hs.port, token: hs.token, device_name: hs.deviceName };
   }
 
   /** Sender: upload files to the receiver, streaming progress to the UI. */
   async sendFiles(hs: UiHandshake, paths: string[]): Promise<number> {
     const progress = new TsProgress((p) => this.hooks.onProgress(p));
-    const total = await this.require().send_files({ ...hs } as Handshake, paths, progress);
+    const total = await this.require().sendFiles(toRustHandshake(hs), paths, progress);
     return Number(total);
   }
 
