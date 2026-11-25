@@ -24,12 +24,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK + platform
+      # GitHub runners ship with Android SDK preinstalled. Avoid
+      # android-actions/setup-android@v3: it runs `sdkmanager tools`, which
+      # was removed in cmdline-tools >= 12 and fails on modern runners.
+      - name: Locate preinstalled Android SDK + install NDK/platform
         run: |
-          sdkmanager "platforms;android-35" \
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMGR=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' | sort -V | tail -1)
+          echo "Using sdkmanager: $SDKMGR"
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          "$SDKMGR" "platforms;android-35" \
                     "build-tools;35.0.0" \
                     "ndk;26.1.10909125"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
