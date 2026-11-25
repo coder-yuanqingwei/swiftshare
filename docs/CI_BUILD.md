@@ -60,3 +60,25 @@
    但 APK 能否编译出来与它运行时是否稳定是两回事——CI 只保证产出安装包。
 4. **没有签名配置**：默认打的是 `assembleRelease`，用 debug 签名或 unsigned；
    可安装但无法上架 Google Play。如需正式签名，后续加 keystore secrets。
+
+---
+
+## 六、实际构建结果（2026-11-25，已跑通）
+
+仓库已创建并推送：`https://github.com/coder-yuanqingwei/swiftshare`（8 个提交，master + tag v0.1.0）。
+
+**最终成功构建**：run #45562850107（tag v0.1.0），全部 16 步通过，结论 `success`。
+
+**APK 下载**：
+- Release 页：https://github.com/coder-yuanqingwei/swiftshare/releases/tag/v0.1.0
+- 直链：`app-release.apk`（93.64 MB）：https://github.com/coder-yuanqingwei/swiftshare/releases/download/v0.1.0/app-release.apk
+- 备用：Actions 成功运行的 `swiftshare-apk` artifact（33 MB 压缩）。
+
+**首跑踩过并已修复的坑（共 5 处）**：
+1. `android-actions/setup-android@v3` 内部执行 `sdkmanager tools`，新版 cmdline-tools 已移除该包 → 改用 runner 预装 SDK + 直接 `sdkmanager` 安装 NDK/platform。
+2. `native-core/package.json` 缺 `repository` 字段，ubrn 解析失败 → 补上。
+3. `react-native-svg@15.16.1` 用了 RN 0.77+ 的 codegen 类型（`minX: undefined`），与 RN 0.76 不兼容 → 钉死到 15.12.1。
+4. 缺 `@react-native-community/cli` 与 `@react-native/metro-config`，且没有 `metro.config.js` → 补齐；metro 配置加 `watchFolders` 解析指向仓库外的 `file:../native-core` 软链。
+5. Release 步骤默认 `GITHUB_TOKEN` 无写权限（403）→ job 加 `permissions: contents: write`。
+
+> 复现构建：push 到 master 会触发；打 `v*` tag 会额外发布 Release 并附上 APK。
