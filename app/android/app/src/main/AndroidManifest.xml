@@ -33,5 +33,11 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!-- 独立进程：主进程崩溃后仍能显示错误报告 -->
+      <activity
+        android:name=".CrashReportActivity"
+        android:process=":crash"
+        android:exported="false" />
     </application>
 </manifest>
