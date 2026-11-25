@@ -1,0 +1,17 @@
+---
+# Local Rust crate — no remote checkout needed.
+rust:
+  directory: ../rust-core
+  manifestPath: Cargo.toml
+
+# Where generated bindings land.
+bindings:
+  cpp: cpp/generated
+  ts: src/generated
+
+# Files the generator must not clobber on regeneration.
+noOverwrite:
+  - "*.podspec"
+  - package.json
+  - android/build.gradle
+  - android/src/main/AndroidManifest.xml

@@ -1,0 +1,22 @@
+{
+  "name": "react-native-swiftshare-core",
+  "version": "0.1.0",
+  "description": "Rust-backed transfer core for SwiftShare (UniFFI TurboModule)",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "ubrn:android": "ubrn build android --and-generate",
+    "ubrn:ios": "ubrn build ios --and-generate && (cd example/ios && pod install)",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ubjs/core": "^0.31.0"
+  },
+  "devDependencies": {
+    "uniffi-bindgen-react-native": "^0.31.0"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  }
+}

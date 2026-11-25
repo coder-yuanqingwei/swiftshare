@@ -1,0 +1,7 @@
+# UniFFI bindings configuration.
+# The `tokio` feature on the uniffi dependency supplies the async runtime;
+# async fn exported via #[uniffi::export] become Promises in TypeScript.
+[bindings]
+# Kotlin (Android) / Swift (iOS) package names, used when generating bindings.
+kotlin_package = "com.swiftshare.core"
+swift_module = "SwiftShareCore"

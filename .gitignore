@@ -1,0 +1,27 @@
+# Rust
+rust-core/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+app/node_modules/
+native-core/node_modules/
+
+# UniFFI generated (generated at build time by ubrn)
+native-core/src/generated/
+native-core/android/src/main/jniLibs/
+native-core/ios/build/
+native-core/cpp/generated/
+
+# RN Android/iOS build outputs
+app/android/app/build/
+app/android/build/
+app/android/.gradle/
+app/ios/build/
+app/ios/Pods/
+app/ios/Podfile.lock
+
+# misc
+*.log
+.DS_Store
+.env
