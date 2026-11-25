@@ -203,7 +203,7 @@ class BleService {
       device = await device.discoverAllServicesAndCharacteristics();
       const char = await device.readCharacteristicForService(SERVICE_UUID, HANDSHAKE_CHAR_UUID);
       const json = char.value ? base64ToUtf8(char.value) : null;
-      await device.disconnect();
+      await this.manager.cancelDeviceConnection(deviceId);
       if (json) this.callbacks?.onHandshakeReceived(json);
       return json;
     } catch (e: any) {
@@ -221,7 +221,7 @@ class BleService {
         CONTROL_CHAR_UUID,
         utf8ToBase64(command),
       );
-      await device.disconnect();
+      await this.manager.cancelDeviceConnection(deviceId);
     } catch (e: any) {
       this.callbacks?.onLog(`sendControl failed: ${e?.message ?? e}`);
     }

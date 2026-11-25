@@ -37,7 +37,7 @@ export async function ensurePermissions(): Promise<PermissionResult> {
 
     // iOS: Bluetooth + local network + photo library
     const required = [
-      PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL,
+      PERMISSIONS.IOS.BLUETOOTH,
       PERMISSIONS.IOS.PHOTO_LIBRARY,
     ];
     for (const p of required) {
