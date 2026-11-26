@@ -8,12 +8,13 @@ interface Props {
   codeError?: string | null;
   onConnectCode: (code: string) => void;
   onPaste: () => Promise<string | null>;
+  onScan: () => void;
   onSendFiles: () => void;
   onReset: () => void;
 }
 
 export default function SenderScreen({
-  connectedName, codeError, onConnectCode, onPaste, onSendFiles, onReset,
+  connectedName, codeError, onConnectCode, onPaste, onScan, onSendFiles, onReset,
 }: Props) {
   const [code, setCode] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -61,6 +62,9 @@ export default function SenderScreen({
             autoCorrect={false}
           />
           {codeError ? <Text style={styles.errorText}>{codeError}</Text> : null}
+          <TouchableOpacity style={styles.scanBtn} onPress={onScan}>
+            <Text style={styles.scanBtnText}>📷 扫一扫（扫描对方二维码）</Text>
+          </TouchableOpacity>
           <View style={styles.btnRow}>
             <TouchableOpacity style={styles.pasteBtn} onPress={paste}>
               <Text style={styles.pasteBtnText}>粘贴</Text>
@@ -112,6 +116,8 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 13, fontWeight: '700', color: '#555', marginBottom: 8 },
   input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 13, color: '#222', minHeight: 80, textAlignVertical: 'top', marginBottom: 6 },
   errorText: { color: '#d32f2f', fontSize: 12, marginBottom: 8 },
+  scanBtn: { backgroundColor: '#e0f7f1', paddingVertical: 13, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  scanBtnText: { color: '#0e8a6f', fontWeight: '700', fontSize: 15 },
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
   pasteBtn: { flex: 1, backgroundColor: '#eef3ff', paddingVertical: 13, borderRadius: 10, alignItems: 'center' },
   pasteBtnText: { color: '#2f6fed', fontWeight: '700', fontSize: 15 },

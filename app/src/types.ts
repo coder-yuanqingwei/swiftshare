@@ -31,6 +31,7 @@ export type AppPhase =
   | 'checking-network'
   | 'setup-hotspot'
   | 'discovering'      // 发送方：等待粘贴连接码
+  | 'scanning'         // 发送方：扫码连接
   | 'advertising'      // 接收方：HTTP 就绪，展示连接码
   | 'connected'
   | 'transferring'

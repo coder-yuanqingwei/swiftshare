@@ -13,6 +13,10 @@
     <key>NSLocalNetworkUsageDescription</key>
     <string>用于在局域网内高速传输图片文件</string>
 
+    <!-- ===== 扫码连接码 ===== -->
+    <key>NSCameraUsageDescription</key>
+    <string>用于扫描接收方的连接码二维码</string>
+
     <!-- ===== 选图 / 相册 ===== -->
     <key>NSPhotoLibraryUsageDescription</key>
     <string>用于选择要发送的图片</string>

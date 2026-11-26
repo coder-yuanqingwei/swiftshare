@@ -26,6 +26,7 @@ import type { AppPhase, Handshake, TransferProgress, Role } from './types';
 import HomeScreen from './screens/HomeScreen';
 import ReceiverScreen from './screens/ReceiverScreen';
 import SenderScreen from './screens/SenderScreen';
+import ScannerScreen from './screens/ScannerScreen';
 import ResultScreen from './screens/ResultScreen';
 
 /** 把底层（Rust/系统）英文异常转成可读中文提示，便于用户自行排查。 */
@@ -245,25 +246,25 @@ export default function App() {
         />
       )}
 
-      {phase === 'discovering' && role === 'sender' && (
+      {(phase === 'discovering' || phase === 'connected') && role === 'sender' && (
         <SenderScreen
           connectedName={connectedName}
           codeError={codeError}
           onConnectCode={connectByCode}
           onPaste={pasteFromClipboard}
+          onScan={() => setPhase('scanning')}
           onSendFiles={pickAndSend}
           onReset={reset}
         />
       )}
 
-      {phase === 'connected' && role === 'sender' && (
-        <SenderScreen
-          connectedName={connectedName}
-          codeError={codeError}
-          onConnectCode={connectByCode}
-          onPaste={pasteFromClipboard}
-          onSendFiles={pickAndSend}
-          onReset={reset}
+      {phase === 'scanning' && role === 'sender' && (
+        <ScannerScreen
+          onScanned={(code) => {
+            setPhase('discovering');
+            connectByCode(code);
+          }}
+          onCancel={() => setPhase('discovering')}
         />
       )}
 
