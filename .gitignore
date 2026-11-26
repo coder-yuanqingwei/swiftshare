@@ -9,6 +9,8 @@ native-core/node_modules/
 
 # UniFFI generated (generated at build time by ubrn)
 native-core/src/generated/
+# ubrn's default generated entry — real entry is the hand-maintained src/index.ts
+native-core/src/index.tsx
 native-core/android/src/main/jniLibs/
 native-core/ios/build/
 native-core/cpp/generated/
