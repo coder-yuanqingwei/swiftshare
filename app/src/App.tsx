@@ -8,6 +8,7 @@ import {
   StatusBar,
   ScrollView,
   ActivityIndicator,
+  Clipboard,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import DocumentPicker from 'react-native-document-picker';
@@ -27,6 +28,25 @@ import ReceiverScreen from './screens/ReceiverScreen';
 import SenderScreen from './screens/SenderScreen';
 import ResultScreen from './screens/ResultScreen';
 
+/** 把底层（Rust/系统）英文异常转成可读中文提示，便于用户自行排查。 */
+function friendlyError(e: any): string {
+  const raw = e?.message ?? String(e);
+  const s = String(raw);
+  if (/Permission denied|EACCES|os error 13|read-only file system/i.test(s)) {
+    return `没有文件写入权限：${s}\n请开启个人热点或连接同一 WiFi 后重试。`;
+  }
+  if (/Address already in use|EADDRINUSE|os error 98/i.test(s)) {
+    return `端口被占用：${s}\n请关闭其他传输类 App 后重试。`;
+  }
+  if (/checksum|mismatch/i.test(s)) {
+    return `原生库版本不匹配：${s}\n请卸载旧版后重新安装。`;
+  }
+  if (/connection refused|unreachable|ECONN|network/i.test(s)) {
+    return `网络连接失败：${s}\n请确认发送方已加入同一热点/WiFi。`;
+  }
+  return s;
+}
+
 export default function App() {
   const [phase, setPhase] = useState<AppPhase>('idle');
   const [role, setRole] = useState<Role | null>(null);
@@ -39,6 +59,7 @@ export default function App() {
   const [connectedName, setConnectedName] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [hotspotHint, setHotspotHint] = useState<string>('');
+  const [errorDetail, setErrorDetail] = useState<string>('');
 
   useEffect(() => {
     // Wire the Rust engine callbacks into React state once at startup.
@@ -60,8 +81,11 @@ export default function App() {
       setPhase('requesting-permissions');
       const perm = await ensurePermissions();
       if (!perm.ok) {
+        const msg = perm.reason ?? '未知权限错误';
+        pushLog(`权限不足: ${msg}`);
+        setErrorDetail(msg);
         setPhase('error');
-        Toast.show({ type: 'error', text1: '权限不足', text2: perm.reason });
+        Toast.show({ type: 'error', text1: '权限不足', text2: msg });
         return;
       }
       if (r === 'receiver') {
@@ -72,7 +96,7 @@ export default function App() {
         setPhase('discovering');
       }
     },
-    [],
+    [pushLog],
   );
 
   /** 接收方：检测局域网 → 启动 HTTP 服务 → 生成连接码。失败时进入热点引导。 */
@@ -93,15 +117,20 @@ export default function App() {
       }
       const { getSaveDir } = await import('./services/network');
       const dir = getSaveDir();
-      const hs = await transfer.startReceiver(status.ip, dir, 8787);
+      // port=0：由系统分配空闲端口，Rust 返回实际端口写进连接码，
+      // 避免 8787 被占用时 bind 失败。
+      const hs = await transfer.startReceiver(status.ip, dir, 0);
       setHandshake(hs);
       setConnectionCode(makeConnectionCode(hs));
       setNetworkType(status.type);
       pushLog(`本机 IP ${status.ip}:${hs.port}，HTTP 服务就绪，连接码已生成`);
       setPhase('advertising');
     } catch (e: any) {
+      const msg = friendlyError(e);
+      pushLog(`启动接收失败: ${msg}`);
+      setErrorDetail(msg);
       setPhase('error');
-      Toast.show({ type: 'error', text1: '启动接收失败', text2: e?.message ?? String(e) });
+      Toast.show({ type: 'error', text1: '启动接收失败', text2: msg });
     }
   }, [pushLog]);
 
@@ -121,8 +150,9 @@ export default function App() {
       pushLog(`已解析连接码，目标 ${hs.ip}:${hs.port}`);
       setPhase('connected');
     } catch (e: any) {
-      setCodeError(e?.message ?? String(e));
-      Toast.show({ type: 'error', text1: '连接码无效', text2: e?.message ?? String(e) });
+      const msg = e?.message ?? String(e);
+      setCodeError(msg);
+      Toast.show({ type: 'error', text1: '连接码无效', text2: msg });
     }
   }, [pushLog]);
 
@@ -144,10 +174,13 @@ export default function App() {
       setPhase('done');
     } catch (e: any) {
       if (DocumentPicker && DocumentPicker.isCancel && DocumentPicker.isCancel(e)) return;
+      const msg = friendlyError(e);
+      pushLog(`传输失败: ${msg}`);
+      setErrorDetail(msg);
       setPhase('error');
-      Toast.show({ type: 'error', text1: '传输失败', text2: e?.message ?? String(e) });
+      Toast.show({ type: 'error', text1: '传输失败', text2: msg });
     }
-  }, [handshake]);
+  }, [handshake, pushLog]);
 
   const reset = useCallback(() => {
     transfer.stopReceiver();
@@ -162,6 +195,7 @@ export default function App() {
     setConnectedName(null);
     setCodeError(null);
     setHotspotHint('');
+    setErrorDetail('');
   }, []);
 
   return (
@@ -242,15 +276,30 @@ export default function App() {
       )}
 
       {phase === 'error' && (
-        <View style={styles.center}>
-          <Text style={styles.errorTitle}>出错了</Text>
+        <ScrollView style={styles.center} contentContainerStyle={styles.centerContent}>
+          <Text style={styles.bigIcon}>⚠️</Text>
+          <Text style={styles.errorTitle}>操作失败</Text>
+          {errorDetail ? (
+            <View style={styles.errorCard}>
+              <Text style={styles.errorCardLabel}>错误信息（可复制）</Text>
+              <Text style={styles.errorCardText} selectable>{errorDetail}</Text>
+            </View>
+          ) : null}
           <ScrollView style={styles.logBox}>
-            <Text style={styles.logText}>{logs.join('\n')}</Text>
+            <Text style={styles.logText}>{logs.join('\n') || '（暂无日志）'}</Text>
           </ScrollView>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={() => {
+              Clipboard.setString(`错误: ${errorDetail}\n日志:\n${logs.join('\n')}`);
+              Toast.show({ type: 'success', text1: '已复制错误信息', text2: '可发给开发者排查' });
+            }}>
+            <Text style={styles.secondaryBtnText}>复制错误信息</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.primaryBtn} onPress={reset}>
             <Text style={styles.primaryBtnText}>返回首页</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       )}
 
       <Toast />
@@ -265,6 +314,9 @@ const styles = StyleSheet.create({
   hint: { marginTop: 12, color: '#666' },
   bigIcon: { fontSize: 64, marginBottom: 12 },
   errorTitle: { fontSize: 22, fontWeight: '700', color: '#d32f2f', marginBottom: 16 },
+  errorCard: { width: '100%', backgroundColor: '#fff', borderLeftWidth: 4, borderLeftColor: '#d32f2f', borderRadius: 10, padding: 14, marginBottom: 16 },
+  errorCardLabel: { fontSize: 12, color: '#999', marginBottom: 6 },
+  errorCardText: { fontSize: 14, color: '#333', lineHeight: 20 },
   hotspotDesc: { fontSize: 14, color: '#555', textAlign: 'center', lineHeight: 21, marginBottom: 20 },
   stepsCard: { width: '100%', backgroundColor: '#fff', borderRadius: 12, padding: 18, marginBottom: 24 },
   step: { fontSize: 15, color: '#333', lineHeight: 26 },

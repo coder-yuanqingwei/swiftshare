@@ -14,10 +14,15 @@ import RNFS from 'react-native-fs';
 /** Platform-correct directory where the Rust receiver writes incoming files. */
 export function getSaveDir(): string {
   // iOS: app sandbox Documents dir (never "/" — no write permission there).
-  // Android: public external storage so files show up in the gallery app.
-  return Platform.OS === 'ios'
-    ? `${RNFS.DocumentDirectoryPath}/SwiftShare`
-    : `${RNFS.ExternalStorageDirectoryPath}/SwiftShare`;
+  if (Platform.OS === 'ios') {
+    return `${RNFS.DocumentDirectoryPath}/SwiftShare`;
+  }
+  // Android 11+ (API 30+) 强制分区存储：App 无权写外部存储根目录
+  // (/storage/emulated/0)，否则 Rust 的 create_dir_all 会 Permission denied
+  // 并抛错。必须写 App 专属外部目录（无需 WRITE_EXTERNAL_STORAGE 权限）。
+  const base: string =
+    (RNFS as any).ExternalDirectoryPath || RNFS.DocumentDirectoryPath;
+  return `${base}/SwiftShare`;
 }
 
 /** 网络可用性快照，供 UI 决定是否展示热点引导。 */
