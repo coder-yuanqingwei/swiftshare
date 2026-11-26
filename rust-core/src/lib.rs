@@ -12,7 +12,7 @@ uniffi::setup_scaffolding!();
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use base64::Engine as _;
 use rand::RngCore;
@@ -106,6 +106,29 @@ pub trait ProgressCallback: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
+// Tokio runtime owner
+// ---------------------------------------------------------------------------
+
+/// UniFFI 导出的 async 方法由宿主（RN 的 JS executor）驱动，其 poll 上下
+/// 文里**没有 Tokio reactor**，直接调用 tokio::fs / TcpListener::bind /
+/// tokio::spawn 会抛 "there is no reactor running"。
+///
+/// 解决：自建一个常驻 multi-thread runtime，把所有需要 reactor 的实际工作
+/// spawn 进去执行；对外 async 方法只 await 一个 oneshot（不依赖 reactor）。
+/// 用 OnceLock 保证全进程只建一次，且线程安全。
+fn runtime() -> &'static tokio::runtime::Runtime {
+    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RT.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("swiftshare-tokio")
+            .enable_all()
+            .build()
+            .expect("failed to build SwiftShare Tokio runtime")
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Internal HTTP receiver
 // ---------------------------------------------------------------------------
 
@@ -182,9 +205,11 @@ async fn status_handler(
 
 #[derive(uniffi::Object)]
 pub struct TransferEngine {
-    ble: Option<Box<dyn BleAdapter>>,
-    server_handle: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
-    receiver_port: Mutex<u16>,
+    // Arc 而非 Box：需要把日志回调克隆进常驻 runtime 的任务里。
+    // constructor 对外签名仍是 Option<Box<dyn BleAdapter>>，入口处转 Arc。
+    ble: Option<Arc<dyn BleAdapter>>,
+    server_handle: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
+    receiver_port: Arc<Mutex<u16>>,
     received: Arc<Mutex<HashMap<String, FileReceipt>>>,
 }
 
@@ -192,10 +217,11 @@ pub struct TransferEngine {
 impl TransferEngine {
     #[uniffi::constructor]
     pub fn new(ble: Option<Box<dyn BleAdapter>>) -> Self {
+        let ble: Option<Arc<dyn BleAdapter>> = ble.map(|b| Arc::from(b));
         Self {
             ble,
-            server_handle: Mutex::new(None),
-            receiver_port: Mutex::new(8787),
+            server_handle: Arc::new(Mutex::new(None)),
+            receiver_port: Arc::new(Mutex::new(8787)),
             received: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -220,68 +246,31 @@ impl TransferEngine {
     ///
     /// Pass `port = 0` to let the OS pick a free port; the returned Handshake
     /// always carries the *actual* bound port.
+    ///
+    /// 注意：UniFFI 从 RN 驱动本 future 时没有 Tokio reactor，故实际工作
+    /// spawn 到我们自带的常驻 runtime，本方法只 await 一个 oneshot。
     pub async fn start_receiver(
         &self,
         local_ip: String,
         save_dir: String,
         port: u16,
     ) -> Result<Handshake, TransferError> {
-        // Generate the token in a short scope: thread_rng() is !Send and must
-        // be dropped before any .await so the exported future stays Send (UniFFI).
-        let token = {
-            let mut rng = rand::thread_rng();
-            let mut bytes = [0u8; 12];
-            rng.fill_bytes(&mut bytes);
-            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
-        };
+        let ble = self.ble.clone();
+        let server_handle = self.server_handle.clone();
+        let receiver_port = self.receiver_port.clone();
+        let received = self.received.clone();
 
-        tokio::fs::create_dir_all(&save_dir).await?;
-
-        let state = ReceiverState {
-            token: token.clone(),
-            save_dir: PathBuf::from(&save_dir),
-            received: self.received.clone(),
-        };
-
-        let app = axum::Router::new()
-            .route("/", axum::routing::get(health_handler))
-            .route("/upload", axum::routing::post(upload_handler))
-            .route("/status", axum::routing::get(status_handler))
-            .with_state(state);
-
-        let addr = format!("0.0.0.0:{}", port);
-        let listener = tokio::net::TcpListener::bind(&addr)
-            .await
-            .map_err(|e| TransferError::Network(format!("bind {}: {}", addr, e)))?;
-        let bound_port = listener
-            .local_addr()
-            .map_err(|e| TransferError::Network(e.to_string()))?
-            .port();
-
-        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-        *self.server_handle.lock().unwrap() = Some(tx);
-        *self.receiver_port.lock().unwrap() = bound_port;
-
-        let server = axum::serve(listener, app).with_graceful_shutdown(async move {
-            let _ = rx.await;
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Handshake, TransferError>>();
+        runtime().spawn(async move {
+            let result = start_receiver_inner(
+                local_ip, save_dir, port, ble, server_handle, receiver_port, received,
+            )
+            .await;
+            let _ = tx.send(result);
         });
 
-        tokio::spawn(async move {
-            if let Err(e) = server.await {
-                tracing::error!("HTTP receiver stopped with error: {}", e);
-            }
-        });
-
-        if let Some(ble) = &self.ble {
-            ble.on_log(format!("Rust: receiver listening on {}:{}", local_ip, bound_port));
-        }
-
-        Ok(Handshake {
-            ip: local_ip,
-            port: bound_port,
-            token,
-            device_name: String::new(),
-        })
+        rx.await
+            .map_err(|_| TransferError::InvalidState("receiver task cancelled".into()))?
     }
 
     /// Stop the receiver HTTP server.
@@ -301,12 +290,43 @@ impl TransferEngine {
 
     /// Sender side: upload one or more local files to the receiver described
     /// by `handshake`. Streams each file with reqwest and reports progress.
+    ///
+    /// 与 start_receiver 同理：实际工作 spawn 到常驻 runtime，本方法只等 oneshot。
     pub async fn send_files(
         &self,
         handshake: Handshake,
         paths: Vec<String>,
         progress: Box<dyn ProgressCallback>,
     ) -> Result<u64, TransferError> {
+        let ble = self.ble.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<u64, TransferError>>();
+        runtime().spawn(async move {
+            let result = send_files_inner(handshake, paths, progress, ble).await;
+            let _ = tx.send(result);
+        });
+        rx.await
+            .map_err(|_| TransferError::InvalidState("send task cancelled".into()))?
+    }
+
+    /// Encode a handshake into a compact JSON string for the QR code.
+    /// The sender scans this and reconstructs the Handshake in TS.
+    pub fn make_qr_payload(&self, handshake: Handshake) -> String {
+        serde_json::to_string(&handshake).unwrap_or_default()
+    }
+
+    /// Parse a QR payload back into a Handshake.
+    pub fn parse_qr_payload(&self, json: String) -> Result<Handshake, TransferError> {
+        serde_json::from_str(&json).map_err(|e| TransferError::InvalidState(e.to_string()))
+    }
+}
+
+/// 真正执行发送的内部函数（运行在常驻 Tokio runtime 上，有 reactor）。
+async fn send_files_inner(
+    handshake: Handshake,
+    paths: Vec<String>,
+    progress: Box<dyn ProgressCallback>,
+    ble: Option<Arc<dyn BleAdapter>>,
+) -> Result<u64, TransferError> {
         if paths.is_empty() {
             return Err(TransferError::InvalidState("no files selected".into()));
         }
@@ -380,22 +400,78 @@ impl TransferEngine {
             });
         }
 
-        if let Some(ble) = &self.ble {
-            ble.on_log(format!("Rust: sent {} bytes across {} files", sent, total_files));
+    if let Some(ble) = &ble {
+        ble.on_log(format!("Rust: sent {} bytes across {} files", sent, total_files));
+    }
+    Ok(sent)
+}
+
+/// 真正启动接收服务并绑定端口的内部函数（运行在常驻 Tokio runtime 上，有 reactor）。
+async fn start_receiver_inner(
+    local_ip: String,
+    save_dir: String,
+    port: u16,
+    ble: Option<Arc<dyn BleAdapter>>,
+    server_handle: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
+    receiver_port: Arc<Mutex<u16>>,
+    received: Arc<Mutex<HashMap<String, FileReceipt>>>,
+) -> Result<Handshake, TransferError> {
+    // Generate the token in a short scope: thread_rng() is !Send and must
+    // be dropped before any .await so the future stays Send.
+    let token = {
+        let mut rng = rand::thread_rng();
+        let mut bytes = [0u8; 12];
+        rng.fill_bytes(&mut bytes);
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    };
+
+    tokio::fs::create_dir_all(&save_dir).await?;
+
+    let state = ReceiverState {
+        token: token.clone(),
+        save_dir: PathBuf::from(&save_dir),
+        received,
+    };
+
+    let app = axum::Router::new()
+        .route("/", axum::routing::get(health_handler))
+        .route("/upload", axum::routing::post(upload_handler))
+        .route("/status", axum::routing::get(status_handler))
+        .with_state(state);
+
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| TransferError::Network(format!("bind {}: {}", addr, e)))?;
+    let bound_port = listener
+        .local_addr()
+        .map_err(|e| TransferError::Network(e.to_string()))?
+        .port();
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    *server_handle.lock().unwrap() = Some(tx);
+    *receiver_port.lock().unwrap() = bound_port;
+
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        let _ = rx.await;
+    });
+
+    tokio::spawn(async move {
+        if let Err(e) = server.await {
+            tracing::error!("HTTP receiver stopped with error: {}", e);
         }
-        Ok(sent)
+    });
+
+    if let Some(ble) = &ble {
+        ble.on_log(format!("Rust: receiver listening on {}:{}", local_ip, bound_port));
     }
 
-    /// Encode a handshake into a compact JSON string for the QR code.
-    /// The sender scans this and reconstructs the Handshake in TS.
-    pub fn make_qr_payload(&self, handshake: Handshake) -> String {
-        serde_json::to_string(&handshake).unwrap_or_default()
-    }
-
-    /// Parse a QR payload back into a Handshake.
-    pub fn parse_qr_payload(&self, json: String) -> Result<Handshake, TransferError> {
-        serde_json::from_str(&json).map_err(|e| TransferError::InvalidState(e.to_string()))
-    }
+    Ok(Handshake {
+        ip: local_ip,
+        port: bound_port,
+        token,
+        device_name: String::new(),
+    })
 }
 
 // Minimal percent-encoding for query values (tokens/filenames only).
@@ -443,6 +519,27 @@ mod tests {
         assert_eq!(url_encode("a b/c"), "a%20b%2Fc");
         assert_eq!(url_encode("ABC-xyz_01.~"), "ABC-xyz_01.~");
         assert_eq!(url_encode("中文"), "%E4%B8%AD%E6%96%87");
+    }
+
+    /// 回归测试：模拟 RN/UniFFI 的驱动方式——用一个**没有 Tokio reactor**
+    /// 的 executor 来 poll async 方法。修复前会抛 "there is no reactor
+    /// running"，修复后应能正常拿到 Handshake。
+    #[test]
+    fn start_receiver_without_caller_tokio_runtime() {
+        let dst = std::env::temp_dir().join(format!("ss-nort-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dst);
+        let dst_str = dst.to_str().unwrap().to_string();
+
+        let engine = TransferEngine::new(None);
+        // block_on 只提供最小 future executor，没有 Tokio I/O driver。
+        let hs = futures::executor::block_on(
+            engine.start_receiver("127.0.0.1".into(), dst_str, 0),
+        )
+        .expect("start_receiver must work without caller Tokio runtime");
+        assert_ne!(hs.port, 0, "bound port must be resolved");
+        assert!(dst.join(".").exists(), "save dir must be created");
+        engine.stop_receiver();
+        let _ = std::fs::remove_dir_all(&dst);
     }
 
     #[tokio::test]
